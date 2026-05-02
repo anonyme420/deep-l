@@ -60,15 +60,18 @@ def train(
 
     # ── Loss ──────────────────────────────────────────────────────────────────
     class_weights = compute_class_weights(train_cycles).to(device)
-    criterion     = CombinedLoss(
-        alpha=class_weights, gamma=2.0,
-        temperature=0.07, w_focal=1.0, w_cl=0.5,
+    # Boost abnormal classes to fix Sp>>Se bias: Normal=0.7x, Crackle=1.2x, Wheeze=1.3x, Both=2.5x
+    bias_correction = torch.tensor([0.7, 1.2, 1.3, 2.5], device=device)
+    class_weights   = class_weights * bias_correction
+    criterion       = CombinedLoss(
+        alpha=class_weights, gamma=3.0,
+        temperature=0.07, w_focal=1.0, w_cl=1.0,
     )
 
     best_score = -1.0
     best_path  = os.path.join(RUNS_DIR, save_name)
     history    = {"train_loss": [], "test_loss": [], "icbhi": [], "macro_recall": []}
-    patience   = 12
+    patience   = 15
     no_improve = 0
 
     print(f"\nTraining on {device} | {epochs} epochs | Patch-Mix CL: {'enabled' if has_proj else 'disabled'}\n")

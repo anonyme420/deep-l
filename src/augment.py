@@ -16,7 +16,7 @@ import random
 import numpy as np
 import librosa
 from collections import defaultdict
-from src.config import SAMPLE_RATE, DURATION, TARGET_PER_CLASS, SEED
+from src.config import SAMPLE_RATE, DURATION, TARGET_PER_CLASS, CLASS_TARGETS, SEED
 
 
 # ── Standard audio augmentations ─────────────────────────────────────────────
@@ -120,40 +120,43 @@ def balance_dataset(
     target_per_class: int = TARGET_PER_CLASS,
     seed: int = SEED,
     use_lcat: bool = True,
+    class_targets: dict = None,
 ) -> list:
     """
-    Oversample minority classes to target_per_class examples.
-    Uses Label-Aware Concatenation (LCat) as the primary augmentation when
-    use_lcat=True, falling back to standard augment_audio for variety.
+    Oversample minority classes using per-class targets (class_targets dict)
+    or a flat target_per_class for all classes.
+    Uses Label-Aware Concatenation (LCat) as the primary augmentation.
     """
     random.seed(seed)
     np.random.seed(seed)
+
+    if class_targets is None:
+        class_targets = CLASS_TARGETS
 
     by_class = defaultdict(list)
     for audio, label in cycles:
         by_class[label].append(audio)
 
-    # Undersample classes that exceed the target (prevents Normal from dominating)
     balanced = []
     for label, audios in by_class.items():
-        if len(audios) > target_per_class:
-            sampled = random.sample(audios, target_per_class)
+        target = class_targets.get(label, target_per_class)
+        if len(audios) > target:
+            sampled = random.sample(audios, target)
             balanced.extend((a, label) for a in sampled)
         else:
             balanced.extend((a, label) for a in audios)
 
     for label, audios in by_class.items():
-        current = min(len(audios), target_per_class)
-        needed  = target_per_class - current
+        target  = class_targets.get(label, target_per_class)
+        current = min(len(audios), target)
+        needed  = target - current
         if needed <= 0:
             continue
 
         for i in range(needed):
             if use_lcat and len(audios) >= 2:
-                # Label-Aware Concatenation: pick two random clips from same class
                 a1, a2 = random.choices(audios, k=2)
                 aug = label_aware_concat(a1.copy(), a2.copy())
-                # Optionally apply light audio augmentation on top
                 if random.random() < 0.5:
                     aug = augment_audio(aug)
             else:
@@ -162,8 +165,9 @@ def balance_dataset(
             balanced.append((aug, label))
 
     random.shuffle(balanced)
+    total_target = sum(class_targets.values())
     print(f"\nBalanced training set: {len(balanced)} cycles "
-          f"(target {target_per_class}/class, LCat={'on' if use_lcat else 'off'})")
+          f"(targets {class_targets}, LCat={'on' if use_lcat else 'off'})")
     _print_distribution(balanced)
     return balanced
 

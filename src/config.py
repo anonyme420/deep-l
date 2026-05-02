@@ -22,13 +22,14 @@ NUM_CLASSES  = 4
 CLASS_NAMES  = ["Normal", "Crackle", "Wheeze", "Both"]
 
 # ── Training ───────────────────────────────────────────────────────────────────
-BATCH_SIZE        = 8     # reduced from 16; 6 GB GPU OOMs at backbone unfreeze with bs=16
-EPOCHS            = 60
-LR                = 5e-5          # lower LR → slower but more stable learning
-WEIGHT_DECAY      = 2e-2          # increased from 1e-2; train/test loss gap shows overfitting
-FOCAL_GAMMA       = 3.0    # increased from 2.0; harder focus on minority class errors
-TARGET_PER_CLASS  = 900    # oversampling target per class; 1800 caused severe overfitting on rare classes
-FREEZE_EPOCHS     = 5             # freeze backbone for first N epochs, train head only
+BATCH_SIZE        = 16
+EPOCHS            = 80
+LR                = 3e-5
+WEIGHT_DECAY      = 1e-2
+FOCAL_GAMMA       = 3.0
+TARGET_PER_CLASS  = 1000
+FREEZE_EPOCHS     = 3
+CLASS_TARGETS     = {0: 1000, 1: 1000, 2: 1200, 3: 1800}  # Both gets 1800 to fix low recall
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 # Options: "ast" (ViT-based Audio Spectrogram Transformer)
