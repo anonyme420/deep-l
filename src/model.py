@@ -228,7 +228,7 @@ class BEATs_WithProjection(nn.Module):
     ):
         super().__init__()
         import sys, os
-        beats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "beats")
+        beats_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "beats")
         if os.path.exists(beats_dir) and beats_dir not in sys.path:
             sys.path.insert(0, beats_dir)
         try:
