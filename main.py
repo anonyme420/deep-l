@@ -51,7 +51,7 @@ def set_seed(seed=SEED):
 
 def parse_args():
     p = argparse.ArgumentParser(description="ICBHI Patch-Mix Contrastive AST")
-    p.add_argument("--model",            default=MODEL_NAME, choices=["passt", "ast", "efficientnet"])
+    p.add_argument("--model",            default=MODEL_NAME, choices=["passt", "ast", "efficientnet", "beats"])
     p.add_argument("--epochs",           type=int,   default=EPOCHS)
     p.add_argument("--batch-size",       type=int,   default=BATCH_SIZE)
     p.add_argument("--lr",               type=float, default=LR)
@@ -97,9 +97,8 @@ def main():
     )
 
     # 4. DataLoaders
-    use_passt = (args.model == "passt")
     train_loader, test_loader = get_loaders(
-        train_cycles, test_cycles, args.batch_size, use_passt=use_passt
+        train_cycles, test_cycles, args.batch_size, model_type=args.model
     )
     print(f"\nTrain batches: {len(train_loader)} | Test batches: {len(test_loader)}")
 

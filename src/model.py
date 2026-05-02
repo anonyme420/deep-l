@@ -208,6 +208,80 @@ class PaSST_WithProjection(nn.Module):
         return self.cls_head(feat), F.normalize(self.proj_head(feat), dim=1)
 
 
+class BEATs_WithProjection(nn.Module):
+    """
+    BEATs (Microsoft, AudioSet mAP 54.0%) + classification and projection heads.
+
+    Input:  (B, 80000) raw 16 kHz waveform
+    Setup on Kaggle:
+        !git clone https://github.com/microsoft/unilm.git /kaggle/working/unilm
+        !cp -r /kaggle/working/unilm/beats /kaggle/working/new_approach/beats
+        # Download BEATs_iter3_plus_AS2M.pt to /kaggle/working/new_approach/
+    """
+
+    def __init__(
+        self,
+        num_classes:     int   = NUM_CLASSES,
+        checkpoint_path: str   = None,
+        dropout:         float = 0.5,
+        proj_dim:        int   = 128,
+    ):
+        super().__init__()
+        import sys, os
+        beats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "beats")
+        if os.path.exists(beats_dir) and beats_dir not in sys.path:
+            sys.path.insert(0, beats_dir)
+        try:
+            from BEATs import BEATs, BEATsConfig
+        except ImportError:
+            raise ImportError(
+                "BEATs not found. Run:\n"
+                "  !git clone https://github.com/microsoft/unilm.git /kaggle/working/unilm\n"
+                "  !cp -r /kaggle/working/unilm/beats /kaggle/working/new_approach/beats"
+            )
+
+        if checkpoint_path is None:
+            checkpoint_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "BEATs_iter3_plus_AS2M.pt",
+            )
+
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        cfg  = BEATsConfig(ckpt["cfg"])
+        self.backbone = BEATs(cfg)
+        self.backbone.load_state_dict(ckpt["model"])
+
+        embed_dim      = 768
+        self.embed_dim = embed_dim
+        print(f"BEATs loaded | embed_dim={embed_dim} | ckpt={checkpoint_path}")
+
+        self.cls_head = nn.Sequential(
+            nn.LayerNorm(embed_dim),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim, 256),
+            nn.GELU(),
+            nn.Dropout(dropout / 2),
+            nn.Linear(256, num_classes),
+        )
+        self.proj_head = nn.Sequential(
+            nn.Linear(embed_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, proj_dim),
+        )
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        padding_mask = torch.zeros(x.shape, dtype=torch.bool, device=x.device)
+        feat, _      = self.backbone.extract_features(x, padding_mask=padding_mask)
+        return feat.mean(dim=1)   # (B, 768)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.cls_head(self.encode(x))
+
+    def forward_with_proj(self, x: torch.Tensor):
+        feat = self.encode(x)
+        return self.cls_head(feat), F.normalize(self.proj_head(feat), dim=1)
+
+
 class EfficientNetModel(nn.Module):
     def __init__(self, num_classes: int = NUM_CLASSES, pretrained: bool = True, dropout: float = 0.4):
         super().__init__()
@@ -242,6 +316,8 @@ def build_model(name: str, pretrained: bool = True) -> nn.Module:
     name = name.lower()
     if name == "passt":
         return PaSST_WithProjection(pretrained=pretrained)
+    elif name == "beats":
+        return BEATs_WithProjection()
     elif name == "ast":
         return ASTWithProjection(pretrained=pretrained)
     elif name in ("efficientnet", "eff"):

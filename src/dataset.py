@@ -1,11 +1,9 @@
 """
-PyTorch Dataset with two preprocessing paths:
+PyTorch Dataset with three preprocessing paths:
 
-  AST  path  → (3, IMG_SIZE, IMG_SIZE) [0,1] + ImageNet normalisation
-  PaSST path → (1, 128, 998) AudioSet mean/std normalisation, padded to pretrained T
-
-Patch-Mix augmentation is applied at batch level in train.py for both paths
-(patch_mix_batch handles any C×H×W shape).
+  AST   path → (3, IMG_SIZE, IMG_SIZE) [0,1] + ImageNet normalisation
+  PaSST path → (1, 128, 500) AudioSet mean/std normalisation
+  BEATs path → (T,) raw 16 kHz waveform (BEATs does its own feature extraction)
 """
 
 import numpy as np
@@ -17,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
 from src.preprocess import to_melspec
 from src.augment import spec_augment
-from src.config import IMG_SIZE
+from src.config import IMG_SIZE, SAMPLE_RATE, DURATION
 
 # ── PaSST normalisation constants (computed from AudioSet) ───────────────────
 _PASST_MEAN =  -4.2677393
@@ -26,25 +24,27 @@ _PASST_T    =   500        # our 5 s clip @ 32 kHz/320 hop; pos embed resized in
 
 
 class ICBHIDataset(Dataset):
-    def __init__(self, cycles: list, training: bool = False, use_passt: bool = False):
-        self.cycles    = cycles
-        self.training  = training
-        self.use_passt = use_passt
+    def __init__(self, cycles: list, training: bool = False, model_type: str = "passt"):
+        self.cycles     = cycles
+        self.training   = training
+        self.model_type = model_type  # "passt" | "ast" | "beats"
 
     def __len__(self):
         return len(self.cycles)
 
     def __getitem__(self, idx):
         audio, label = self.cycles[idx]
-        mel = to_melspec(audio)          # raw dB, shape (N_MELS, T)
 
-        if self.training:
-            mel = spec_augment(mel)
-
-        if self.use_passt:
-            x = _to_tensor_passt(mel)    # (1, 128, 998)
+        if self.model_type == "beats":
+            x = _to_tensor_beats(audio)          # (T,) raw 16 kHz waveform
         else:
-            x = _to_tensor_ast(mel)      # (3, IMG_SIZE, IMG_SIZE)
+            mel = to_melspec(audio)
+            if self.training:
+                mel = spec_augment(mel)
+            if self.model_type == "passt":
+                x = _to_tensor_passt(mel)        # (1, 128, 500)
+            else:
+                x = _to_tensor_ast(mel)          # (3, IMG_SIZE, IMG_SIZE)
 
         return x, torch.tensor(label, dtype=torch.long)
 
@@ -81,6 +81,23 @@ def _to_tensor_passt(mel_db: np.ndarray) -> torch.Tensor:
         mel_norm = mel_norm[:, :_PASST_T]
 
     return torch.from_numpy(mel_norm.copy()).unsqueeze(0).float()  # (1, 128, 998)
+
+
+# ── BEATs tensor ─────────────────────────────────────────────────────────────
+
+_BEATS_SR     = 16000
+_BEATS_TARGET = _BEATS_SR * DURATION   # 80 000 samples
+
+
+def _to_tensor_beats(audio: np.ndarray) -> torch.Tensor:
+    """Resample to 16 kHz and return raw waveform (T,) for BEATs."""
+    import librosa
+    audio_16k = librosa.resample(audio, orig_sr=SAMPLE_RATE, target_sr=_BEATS_SR)
+    if len(audio_16k) < _BEATS_TARGET:
+        audio_16k = np.pad(audio_16k, (0, _BEATS_TARGET - len(audio_16k)))
+    else:
+        audio_16k = audio_16k[:_BEATS_TARGET]
+    return torch.from_numpy(audio_16k.copy()).float()   # (80000,)
 
 
 # ── Patch-Mix (batch-level) ───────────────────────────────────────────────────
@@ -130,9 +147,9 @@ def patch_mix_batch(
 
 # ── DataLoaders ───────────────────────────────────────────────────────────────
 
-def get_loaders(train_cycles, test_cycles, batch_size: int, use_passt: bool = False):
-    train_ds = ICBHIDataset(train_cycles, training=True,  use_passt=use_passt)
-    test_ds  = ICBHIDataset(test_cycles,  training=False, use_passt=use_passt)
+def get_loaders(train_cycles, test_cycles, batch_size: int, model_type: str = "passt"):
+    train_ds = ICBHIDataset(train_cycles, training=True,  model_type=model_type)
+    test_ds  = ICBHIDataset(test_cycles,  training=False, model_type=model_type)
 
     # Per-sample weights → every class equally likely in each batch
     labels       = [label for _, label in train_cycles]
