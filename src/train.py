@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from src.config import EPOCHS, LR, WEIGHT_DECAY, DEVICE, RUNS_DIR, FREEZE_EPOCHS
 from src.sam     import SAM
-from src.losses  import CombinedLoss, compute_class_weights
+from src.losses  import CombinedLoss
 from src.dataset import patch_mix_batch
 from src.evaluate import evaluate, icbhi_score
 
@@ -59,11 +59,10 @@ def train(
     use_sam = False
 
     # ── Loss ──────────────────────────────────────────────────────────────────
-    class_weights = compute_class_weights(train_cycles).to(device)
-    # Boost abnormal classes to fix Sp>>Se bias: Normal=0.7x, Crackle=1.2x, Wheeze=1.3x, Both=2.5x
-    bias_correction = torch.tensor([0.7, 1.2, 1.3, 2.5], device=device)
-    class_weights   = class_weights * bias_correction
-    criterion       = CombinedLoss(
+    # Fixed balanced weights with gentle abnormal boost — don't use compute_class_weights
+    # since we already balanced via per-class oversampling (CLASS_TARGETS)
+    class_weights = torch.tensor([0.8, 1.0, 1.1, 1.8], device=device)
+    criterion     = CombinedLoss(
         alpha=class_weights, gamma=3.0,
         temperature=0.07, w_focal=1.0, w_cl=1.0,
     )
