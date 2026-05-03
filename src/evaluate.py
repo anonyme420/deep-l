@@ -118,6 +118,22 @@ def icbhi_score(metrics: dict) -> float:
 
 # ── Threshold tuning (post-training recall boost) ─────────────────────────────
 
+def collect_probs(
+    model: nn.Module,
+    loader: DataLoader,
+    device: str,
+) -> tuple:
+    """Return (probs, labels) as numpy arrays — used for ensemble averaging."""
+    model.eval()
+    all_probs, all_labels = [], []
+    with torch.no_grad():
+        for mels, labels in loader:
+            probs = torch.softmax(model(mels.to(device)), dim=1).cpu().numpy()
+            all_probs.extend(probs)
+            all_labels.extend(labels.numpy())
+    return np.array(all_probs), np.array(all_labels)
+
+
 def tune_thresholds(model: nn.Module, loader: DataLoader, device: str) -> np.ndarray:
     """
     Find per-class probability thresholds that maximise macro recall.

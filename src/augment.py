@@ -154,14 +154,29 @@ def balance_dataset(
             continue
 
         for i in range(needed):
-            if use_lcat and len(audios) >= 2:
-                a1, a2 = random.choices(audios, k=2)
-                aug = label_aware_concat(a1.copy(), a2.copy())
-                if random.random() < 0.5:
-                    aug = augment_audio(aug)
+            if use_lcat:
+                # Both class: 70% of synthetic samples are Crackle+Wheeze concat
+                # (domain-correct — "Both" literally means crackles AND wheezes present)
+                if label == 3 and random.random() < 0.7:
+                    cr = by_class.get(1, [])
+                    wh = by_class.get(2, [])
+                    if cr and wh:
+                        aug = label_aware_concat(
+                            random.choice(cr).copy(), random.choice(wh).copy()
+                        )
+                        if random.random() < 0.5:
+                            aug = augment_audio(aug)
+                        balanced.append((aug, label))
+                        continue
+                if len(audios) >= 2:
+                    a1, a2 = random.choices(audios, k=2)
+                    aug = label_aware_concat(a1.copy(), a2.copy())
+                    if random.random() < 0.5:
+                        aug = augment_audio(aug)
+                else:
+                    aug = augment_audio(random.choice(audios).copy())
             else:
-                src = random.choice(audios)
-                aug = augment_audio(src.copy())
+                aug = augment_audio(random.choice(audios).copy())
             balanced.append((aug, label))
 
     random.shuffle(balanced)

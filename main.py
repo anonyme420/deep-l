@@ -36,7 +36,7 @@ from src.dataset     import get_loaders
 from src.model       import build_model, count_params
 from src.train       import train
 from src.evaluate    import (
-    evaluate, icbhi_score,
+    evaluate, icbhi_score, collect_probs,
     tune_thresholds, predict_with_thresholds,
     plot_confusion_matrix, plot_history,
     _print_metrics,
@@ -59,9 +59,15 @@ def parse_args():
     p.add_argument("--no-lcat",          action="store_true", help="Disable label-aware concat oversampling")
     p.add_argument("--no-patchmix",      action="store_true", help="Disable Patch-Mix CL (use plain Focal)")
     p.add_argument("--no-pretrained",    action="store_true")
-    p.add_argument("--eval-only",        action="store_true")
-    p.add_argument("--tune-thresholds",  action="store_true")
-    p.add_argument("--checkpoint",       default=None)
+    p.add_argument("--eval-only",         action="store_true")
+    p.add_argument("--tune-thresholds",   action="store_true")
+    p.add_argument("--checkpoint",        default=None)
+    p.add_argument("--ensemble",          action="store_true",
+                   help="Ensemble BEATs + PaSST (eval only, needs both checkpoints)")
+    p.add_argument("--beats-checkpoint",  default=None)
+    p.add_argument("--passt-checkpoint",  default=None)
+    p.add_argument("--ensemble-weight",   type=float, default=0.55,
+                   help="Weight for BEATs in ensemble (PaSST gets 1-w)")
     return p.parse_args()
 
 
@@ -101,6 +107,61 @@ def main():
         train_cycles, test_cycles, args.batch_size, model_type=args.model
     )
     print(f"\nTrain batches: {len(train_loader)} | Test batches: {len(test_loader)}")
+
+    # ── Ensemble evaluation (BEATs + PaSST) ──────────────────────────────────
+    if args.ensemble:
+        from sklearn.metrics import classification_report
+        from src.config import CLASS_NAMES
+
+        beats_ckpt_path = args.beats_checkpoint or os.path.join(RUNS_DIR, "best_beats.pt")
+        passt_ckpt_path = args.passt_checkpoint or os.path.join(RUNS_DIR, "best_passt.pt")
+
+        beats_model = build_model("beats").to(DEVICE)
+        passt_model = build_model("passt").to(DEVICE)
+
+        for path, m, name in [
+            (beats_ckpt_path, beats_model, "BEATs"),
+            (passt_ckpt_path, passt_model, "PaSST"),
+        ]:
+            if os.path.exists(path):
+                ck = torch.load(path, map_location=DEVICE, weights_only=False)
+                m.load_state_dict(ck["model_state"])
+                print(f"{name} loaded: epoch={ck['epoch']}  ICBHI={ck['score']:.4f}")
+            else:
+                print(f"[WARN] {name} checkpoint not found at {path}")
+
+        _, tl_beats = get_loaders(train_cycles, test_cycles, args.batch_size, model_type="beats")
+        _, tl_passt = get_loaders(train_cycles, test_cycles, args.batch_size, model_type="passt")
+
+        probs_beats, labels = collect_probs(beats_model, tl_beats, DEVICE)
+        probs_passt, _      = collect_probs(passt_model, tl_passt, DEVICE)
+
+        w = args.ensemble_weight
+        ens_probs = w * probs_beats + (1.0 - w) * probs_passt
+        preds     = ens_probs.argmax(axis=1)
+
+        report = classification_report(
+            labels, preds, target_names=CLASS_NAMES,
+            output_dict=True, zero_division=0,
+        )
+        ens_metrics = {
+            "accuracy":            report["accuracy"],
+            "macro_recall":        report["macro avg"]["recall"],
+            "per_class_recall":    [report[n]["recall"]    for n in CLASS_NAMES],
+            "per_class_precision": [report[n]["precision"] for n in CLASS_NAMES],
+            "per_class_f1":        [report[n]["f1-score"]  for n in CLASS_NAMES],
+            "all_preds":           preds,
+            "all_labels":          labels,
+        }
+        ens_metrics["icbhi"] = icbhi_score(ens_metrics)
+
+        print(f"\n── Ensemble  BEATs×{w:.2f} + PaSST×{1-w:.2f} ─────────────────────")
+        _print_metrics(ens_metrics, loss=0.0)
+        plot_confusion_matrix(
+            ens_metrics,
+            save_path=os.path.join(RUNS_DIR, "confusion_matrix_ensemble.png"),
+        )
+        return
 
     # 5. Model
     pretrained = not args.no_pretrained
