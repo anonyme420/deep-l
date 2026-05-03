@@ -118,7 +118,8 @@ def train(
             # Only use Patch-Mix during SAM phase: backbone frozen / warmup phases
             # have no gradient flow to the backbone, so contrastive loss adds cost
             # with no benefit.  use_sam becomes True at epoch FREEZE_EPOCHS+6.
-            use_patchmix = has_proj and use_sam and (batch_idx % PATCH_MIX_EVERY == 0)
+            # mels.dim()==4 check: BEATs uses (B,T) raw audio — PatchMix needs (B,C,H,W)
+            use_patchmix = has_proj and use_sam and (batch_idx % PATCH_MIX_EVERY == 0) and mels.dim() == 4
 
             if use_patchmix:
                 # ── Patch-Mix batch ───────────────────────────────────────────
