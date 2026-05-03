@@ -223,7 +223,7 @@ class BEATs_WithProjection(nn.Module):
         self,
         num_classes:     int   = NUM_CLASSES,
         checkpoint_path: str   = None,
-        dropout:         float = 0.5,
+        dropout:         float = 0.6,
         proj_dim:        int   = 128,
     ):
         super().__init__()

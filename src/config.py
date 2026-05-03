@@ -24,12 +24,12 @@ CLASS_NAMES  = ["Normal", "Crackle", "Wheeze", "Both"]
 # ── Training ───────────────────────────────────────────────────────────────────
 BATCH_SIZE        = 16
 EPOCHS            = 80
-LR                = 3e-5
-WEIGHT_DECAY      = 1e-2
+LR                = 1e-5          # lower: BEATs overfits fast with 3e-5
+WEIGHT_DECAY      = 4e-2          # stronger regularization against overfitting
 FOCAL_GAMMA       = 3.0
-TARGET_PER_CLASS  = 1000
+TARGET_PER_CLASS  = 900
 FREEZE_EPOCHS     = 3
-CLASS_TARGETS     = {0: 1000, 1: 1000, 2: 1200, 3: 1800}  # Both gets 1800 to fix low recall
+CLASS_TARGETS     = {0: 900, 1: 900, 2: 1000, 3: 1400}  # less synthetic data → less memorisation
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 # Options: "ast" (ViT-based Audio Spectrogram Transformer)

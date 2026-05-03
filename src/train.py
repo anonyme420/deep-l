@@ -94,7 +94,7 @@ def train(
             print(f"\nEpoch {epoch}: switching to SAM\n")
             optimizer = SAM(
                 model.parameters(), torch.optim.AdamW,
-                rho=0.02, lr=lr, weight_decay=weight_decay,
+                rho=0.05, lr=lr, weight_decay=weight_decay,
             )
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer.base_optimizer,
