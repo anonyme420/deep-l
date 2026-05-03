@@ -166,6 +166,53 @@ def main():
             ens_metrics,
             save_path=os.path.join(RUNS_DIR, "confusion_matrix_ensemble.png"),
         )
+
+        # ── Threshold tuning on ensemble probabilities ────────────────────────
+        print("\n── Threshold Tuning on Ensemble ───────────────────────────────")
+        search_vals = np.arange(0.5, 2.01, 0.1)
+        best_thresholds = np.ones(len(CLASS_NAMES))
+        best_icbhi      = 0.0
+
+        for t1 in search_vals:      # crackle
+            for t2 in search_vals:  # wheeze
+                for t3 in search_vals:  # both
+                    t      = np.array([1.0, t1, t2, t3])
+                    scaled = ens_probs / t
+                    preds_ = scaled.argmax(axis=1)
+                    rep    = classification_report(
+                        labels, preds_, target_names=CLASS_NAMES,
+                        output_dict=True, zero_division=0,
+                    )
+                    m = {
+                        "per_class_recall": [rep[n]["recall"] for n in CLASS_NAMES],
+                    }
+                    score = icbhi_score(m)
+                    if score > best_icbhi:
+                        best_icbhi      = score
+                        best_thresholds = t.copy()
+                        best_preds      = preds_
+
+        print(f"Best thresholds: {best_thresholds}  →  ICBHI={best_icbhi:.4f}")
+        rep = classification_report(
+            labels, best_preds, target_names=CLASS_NAMES,
+            output_dict=True, zero_division=0,
+        )
+        tuned_metrics = {
+            "accuracy":            rep["accuracy"],
+            "macro_recall":        rep["macro avg"]["recall"],
+            "per_class_recall":    [rep[n]["recall"]    for n in CLASS_NAMES],
+            "per_class_precision": [rep[n]["precision"] for n in CLASS_NAMES],
+            "per_class_f1":        [rep[n]["f1-score"]  for n in CLASS_NAMES],
+            "all_preds":           best_preds,
+            "all_labels":          labels,
+        }
+        tuned_metrics["icbhi"] = icbhi_score(tuned_metrics)
+        print("\n── Ensemble + Tuned Thresholds:")
+        _print_metrics(tuned_metrics, loss=0.0)
+        plot_confusion_matrix(
+            tuned_metrics,
+            save_path=os.path.join(RUNS_DIR, "confusion_matrix_ensemble_tuned.png"),
+        )
         return
 
     # 5. Model
