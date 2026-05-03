@@ -64,10 +64,10 @@ def parse_args():
     p.add_argument("--checkpoint",        default=None)
     p.add_argument("--ensemble",          action="store_true",
                    help="Ensemble BEATs + PaSST (eval only, needs both checkpoints)")
-    p.add_argument("--beats-checkpoint",  default=None)
-    p.add_argument("--passt-checkpoint",  default=None)
-    p.add_argument("--ensemble-weight",   type=float, default=0.55,
-                   help="Weight for BEATs in ensemble (PaSST gets 1-w)")
+    p.add_argument("--beats-checkpoint",   default=None)
+    p.add_argument("--beats-checkpoint2",  default=None,
+                   help="Second BEATs checkpoint (e.g. from a different run)")
+    p.add_argument("--passt-checkpoint",   default=None)
     return p.parse_args()
 
 
@@ -108,36 +108,41 @@ def main():
     )
     print(f"\nTrain batches: {len(train_loader)} | Test batches: {len(test_loader)}")
 
-    # ── Ensemble evaluation (BEATs + PaSST) ──────────────────────────────────
+    # ── Ensemble evaluation (BEATs runs + PaSST) ─────────────────────────────
     if args.ensemble:
         from sklearn.metrics import classification_report
         from src.config import CLASS_NAMES
 
-        beats_ckpt_path = args.beats_checkpoint or os.path.join(RUNS_DIR, "best_beats.pt")
-        passt_ckpt_path = args.passt_checkpoint or os.path.join(RUNS_DIR, "best_passt.pt")
-
-        beats_model = build_model("beats").to(DEVICE)
-        passt_model = build_model("passt").to(DEVICE)
-
-        for path, m, name in [
-            (beats_ckpt_path, beats_model, "BEATs"),
-            (passt_ckpt_path, passt_model, "PaSST"),
-        ]:
-            if os.path.exists(path):
-                ck = torch.load(path, map_location=DEVICE, weights_only=False)
-                m.load_state_dict(ck["model_state"])
-                print(f"{name} loaded: epoch={ck['epoch']}  ICBHI={ck['score']:.4f}")
-            else:
-                print(f"[WARN] {name} checkpoint not found at {path}")
+        beats_ckpt_path  = args.beats_checkpoint  or os.path.join(RUNS_DIR, "best_beats.pt")
+        beats_ckpt_path2 = args.beats_checkpoint2 or os.path.join(RUNS_DIR, "best_beats_run3.pt")
+        passt_ckpt_path  = args.passt_checkpoint  or os.path.join(RUNS_DIR, "best_passt.pt")
 
         _, tl_beats = get_loaders(train_cycles, test_cycles, args.batch_size, model_type="beats")
         _, tl_passt = get_loaders(train_cycles, test_cycles, args.batch_size, model_type="passt")
 
-        probs_beats, labels = collect_probs(beats_model, tl_beats, DEVICE)
-        probs_passt, _      = collect_probs(passt_model, tl_passt, DEVICE)
+        all_probs = []
+        labels    = None
 
-        w = args.ensemble_weight
-        ens_probs = w * probs_beats + (1.0 - w) * probs_passt
+        for path, mtype, loader, tag in [
+            (beats_ckpt_path,  "beats", tl_beats, "BEATs-run4"),
+            (beats_ckpt_path2, "beats", tl_beats, "BEATs-run3"),
+            (passt_ckpt_path,  "passt", tl_passt, "PaSST"),
+        ]:
+            if not os.path.exists(path):
+                print(f"[SKIP] {tag} checkpoint not found at {path}")
+                continue
+            m  = build_model(mtype).to(DEVICE)
+            ck = torch.load(path, map_location=DEVICE, weights_only=False)
+            m.load_state_dict(ck["model_state"])
+            print(f"{tag} loaded: epoch={ck['epoch']}  ICBHI={ck['score']:.4f}")
+            probs, lbl = collect_probs(m, loader, DEVICE)
+            all_probs.append(probs)
+            if labels is None:
+                labels = lbl
+            del m
+            torch.cuda.empty_cache()
+
+        ens_probs = np.mean(all_probs, axis=0)   # equal weight across all loaded models
         preds     = ens_probs.argmax(axis=1)
 
         report = classification_report(
@@ -155,7 +160,7 @@ def main():
         }
         ens_metrics["icbhi"] = icbhi_score(ens_metrics)
 
-        print(f"\n── Ensemble  BEATs×{w:.2f} + PaSST×{1-w:.2f} ─────────────────────")
+        print(f"\n── Ensemble ({len(all_probs)} models, equal weights) ──────────────────")
         _print_metrics(ens_metrics, loss=0.0)
         plot_confusion_matrix(
             ens_metrics,
