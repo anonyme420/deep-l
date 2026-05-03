@@ -70,7 +70,7 @@ def train(
     best_score = -1.0
     best_path  = os.path.join(RUNS_DIR, save_name)
     history    = {"train_loss": [], "test_loss": [], "icbhi": [], "macro_recall": []}
-    patience   = 15
+    patience   = 10
     no_improve = 0
 
     print(f"\nTraining on {device} | {epochs} epochs | Patch-Mix CL: {'enabled' if has_proj else 'disabled'}\n")

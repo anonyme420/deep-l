@@ -23,7 +23,7 @@ CLASS_NAMES  = ["Normal", "Crackle", "Wheeze", "Both"]
 
 # ── Training ───────────────────────────────────────────────────────────────────
 BATCH_SIZE        = 16
-EPOCHS            = 80
+EPOCHS            = 40
 LR                = 1e-5          # lower: BEATs overfits fast with 3e-5
 WEIGHT_DECAY      = 4e-2          # stronger regularization against overfitting
 FOCAL_GAMMA       = 3.0
