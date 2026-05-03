@@ -29,14 +29,17 @@ class FocalLoss(nn.Module):
         alpha: torch.Tensor = None,
         gamma: float = FOCAL_GAMMA,
         reduction: str = "mean",
+        label_smoothing: float = 0.0,
     ):
         super().__init__()
         self.register_buffer("alpha", alpha)
-        self.gamma     = gamma
-        self.reduction = reduction
+        self.gamma           = gamma
+        self.reduction       = reduction
+        self.label_smoothing = label_smoothing
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        ce   = F.cross_entropy(logits, targets, weight=self.alpha, reduction="none")
+        ce   = F.cross_entropy(logits, targets, weight=self.alpha, reduction="none",
+                               label_smoothing=self.label_smoothing)
         pt   = torch.exp(-ce)
         loss = (1.0 - pt) ** self.gamma * ce
         if self.reduction == "mean":
@@ -113,16 +116,19 @@ class CombinedLoss(nn.Module):
 
     def __init__(
         self,
-        alpha:       torch.Tensor = None,
-        gamma:       float = FOCAL_GAMMA,
-        temperature: float = 0.07,
-        w_focal:     float = 1.0,
-        w_cl:        float = 0.5,
+        alpha:           torch.Tensor = None,
+        gamma:           float = FOCAL_GAMMA,
+        temperature:     float = 0.07,
+        w_focal:         float = 1.0,
+        w_cl:            float = 0.5,
+        label_smoothing: float = 0.0,
     ):
         super().__init__()
         # Keep two focal instances: one mean-reduced (standard), one per-sample (mix)
-        self.focal_mean   = FocalLoss(alpha=alpha, gamma=gamma, reduction="mean")
-        self.focal_sample = FocalLoss(alpha=alpha, gamma=gamma, reduction="none")
+        self.focal_mean   = FocalLoss(alpha=alpha, gamma=gamma, reduction="mean",
+                                      label_smoothing=label_smoothing)
+        self.focal_sample = FocalLoss(alpha=alpha, gamma=gamma, reduction="none",
+                                      label_smoothing=label_smoothing)
         self.cl_loss      = PatchMixContrastiveLoss(temperature=temperature)
         self.w_focal      = w_focal
         self.w_cl         = w_cl

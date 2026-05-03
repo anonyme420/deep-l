@@ -11,6 +11,7 @@ Training loop with:
 
 import os
 import time
+import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -61,10 +62,11 @@ def train(
     # ── Loss ──────────────────────────────────────────────────────────────────
     # Fixed balanced weights with gentle abnormal boost — don't use compute_class_weights
     # since we already balanced via per-class oversampling (CLASS_TARGETS)
-    class_weights = torch.tensor([0.8, 1.0, 1.1, 1.8], device=device)
+    class_weights = torch.tensor([1.0, 1.0, 1.1, 1.5], device=device)
     criterion     = CombinedLoss(
         alpha=class_weights, gamma=3.0,
         temperature=0.07, w_focal=1.0, w_cl=1.0,
+        label_smoothing=0.05,
     )
 
     best_score = -1.0
@@ -120,6 +122,9 @@ def train(
             # with no benefit.  use_sam becomes True at epoch FREEZE_EPOCHS+6.
             # mels.dim()==4 check: BEATs uses (B,T) raw audio — PatchMix needs (B,C,H,W)
             use_patchmix = has_proj and use_sam and (batch_idx % PATCH_MIX_EVERY == 0) and mels.dim() == 4
+            # Waveform Mixup for BEATs raw audio (dim==2) — same regularization benefit
+            # as PatchMix but operates in the waveform domain
+            use_wavmix   = use_sam and (batch_idx % PATCH_MIX_EVERY == 0) and mels.dim() == 2
 
             if use_patchmix:
                 # ── Patch-Mix batch ───────────────────────────────────────────
@@ -164,6 +169,32 @@ def train(
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
                     optimizer.step()
+
+            elif use_wavmix:
+                # ── Waveform Mixup batch (BEATs raw audio) ────────────────────
+                lam_v  = float(np.random.beta(0.4, 0.4))
+                lam_v  = max(0.1, min(0.9, lam_v))
+                idx_b  = torch.randperm(len(mels), device=device)
+                mix    = lam_v * mels + (1.0 - lam_v) * mels[idx_b]
+                lbl_b  = labels[idx_b]
+                lam_t  = torch.full((len(labels),), lam_v, device=device)
+
+                def _wm_loss(logits):
+                    fa = criterion.focal_sample(logits, labels)
+                    fb = criterion.focal_sample(logits, lbl_b)
+                    return (lam_t * fa + (1.0 - lam_t) * fb).mean()
+
+                # SAM step 1
+                loss = _wm_loss(model(mix))
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                optimizer.first_step(zero_grad=True)
+
+                # SAM step 2
+                loss = _wm_loss(model(mix))
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                optimizer.second_step(zero_grad=True)
 
             else:
                 # ── Standard Focal batch ──────────────────────────────────────
