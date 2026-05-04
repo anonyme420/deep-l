@@ -65,8 +65,8 @@ def parse_args():
     p.add_argument("--ensemble",          action="store_true",
                    help="Ensemble BEATs + PaSST (eval only, needs both checkpoints)")
     p.add_argument("--beats-checkpoint",   default=None)
-    p.add_argument("--beats-checkpoint2",  default=None,
-                   help="Second BEATs checkpoint (e.g. from a different run)")
+    p.add_argument("--beats-checkpoint2",  default=None)
+    p.add_argument("--beats-checkpoint3",  default=None)
     p.add_argument("--passt-checkpoint",   default=None)
     return p.parse_args()
 
@@ -115,6 +115,7 @@ def main():
 
         beats_ckpt_path  = args.beats_checkpoint  or os.path.join(RUNS_DIR, "best_beats.pt")
         beats_ckpt_path2 = args.beats_checkpoint2 or os.path.join(RUNS_DIR, "best_beats_run3.pt")
+        beats_ckpt_path3 = args.beats_checkpoint3 or os.path.join(RUNS_DIR, "best_beats_run5.pt")
         passt_ckpt_path  = args.passt_checkpoint  or os.path.join(RUNS_DIR, "best_passt.pt")
 
         _, tl_beats = get_loaders(train_cycles, test_cycles, args.batch_size, model_type="beats")
@@ -124,8 +125,9 @@ def main():
         labels    = None
 
         for path, mtype, loader, tag in [
-            (beats_ckpt_path,  "beats", tl_beats, "BEATs-run4"),
-            (beats_ckpt_path2, "beats", tl_beats, "BEATs-run3"),
+            (beats_ckpt_path,  "beats", tl_beats, "BEATs-1"),
+            (beats_ckpt_path2, "beats", tl_beats, "BEATs-2"),
+            (beats_ckpt_path3, "beats", tl_beats, "BEATs-3"),
             (passt_ckpt_path,  "passt", tl_passt, "PaSST"),
         ]:
             if not os.path.exists(path):
