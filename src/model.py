@@ -272,7 +272,11 @@ class BEATs_WithProjection(nn.Module):
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         padding_mask = torch.zeros(x.shape, dtype=torch.bool, device=x.device)
         feat, _      = self.backbone.extract_features(x, padding_mask=padding_mask)
-        return feat.mean(dim=1)   # (B, 768)
+        feat = feat.mean(dim=1)   # (B, 768)
+        if self.training:
+            # Rep-Mask: randomly zero 20% of embedding dims (CRAFT RepAugment)
+            feat = feat * torch.bernoulli(torch.full_like(feat, 0.8))
+        return feat
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.cls_head(self.encode(x))

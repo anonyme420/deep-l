@@ -11,6 +11,7 @@ import os
 import glob
 import numpy as np
 import librosa
+from scipy.signal import butter, sosfilt
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -23,6 +24,12 @@ from src.config import (
 _LABEL_MAP = {(0, 0): 0, (1, 0): 1, (0, 1): 2, (1, 1): 3}
 
 SPLIT_FILENAME = "ICBHI_train_test_list.txt"
+
+
+def _bandpass(audio: np.ndarray, sr: int, lo: float = 50.0, hi: float = 2000.0) -> np.ndarray:
+    """Bandpass filter keeping respiratory-relevant frequencies (50–2000 Hz)."""
+    sos = butter(4, [lo, hi], btype="band", fs=sr, output="sos")
+    return sosfilt(sos, audio).astype(np.float32)
 
 
 def _load_single_file(wav_path: str):
@@ -59,6 +66,8 @@ def _load_single_file(wav_path: str):
 
             if len(segment) == 0:
                 continue
+
+            segment = _bandpass(segment, SAMPLE_RATE)
 
             # Pad or truncate to fixed length
             if len(segment) < target_len:

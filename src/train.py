@@ -62,7 +62,7 @@ def train(
     # ── Loss ──────────────────────────────────────────────────────────────────
     # Fixed balanced weights with gentle abnormal boost — don't use compute_class_weights
     # since we already balanced via per-class oversampling (CLASS_TARGETS)
-    class_weights = torch.tensor([1.0, 1.0, 1.1, 2.0], device=device)
+    class_weights = torch.tensor([1.0, 1.9, 3.9, 7.2], device=device)
     criterion     = CombinedLoss(
         alpha=class_weights, gamma=3.0,
         temperature=0.07, w_focal=1.0, w_cl=1.0,
