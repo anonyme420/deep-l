@@ -29,7 +29,7 @@ WEIGHT_DECAY      = 3e-2          # strong but not excessive
 FOCAL_GAMMA       = 3.0
 TARGET_PER_CLASS  = 900
 FREEZE_EPOCHS     = 3
-CLASS_TARGETS     = {0: 900, 1: 900, 2: 1000, 3: 1400}  # less synthetic data → less memorisation
+CLASS_TARGETS     = {0: 900, 1: 900, 2: 1000, 3: 2000}  # double Both to fix low recall
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 # Options: "ast" (ViT-based Audio Spectrogram Transformer)
